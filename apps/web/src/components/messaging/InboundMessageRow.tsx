@@ -36,6 +36,15 @@ export function InboundMessageRow({ message, isSelf, senderName }: InboundMessag
 
       <span className="text-[10px] text-[var(--muted)] mt-1 px-1">
         {formatTime(message.createdAt)}
+        {message.isEdited && (
+          <span
+            aria-label="edited"
+            className="ml-1 italic"
+            title={message.editedAt ? `Edited ${new Date(message.editedAt).toLocaleString()}` : 'Edited'}
+          >
+            (edited)
+          </span>
+        )}
       </span>
     </div>
   );

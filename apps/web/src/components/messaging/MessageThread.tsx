@@ -203,8 +203,21 @@ function DefaultMessageRow({ message }: { message: ChatMessage }) {
     <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm">
       <div className="text-xs font-semibold text-gray-700">{message.senderId}</div>
       <div className="text-gray-900">{text}</div>
-      <div className="mt-1 text-[10px] uppercase tracking-wide text-gray-400">
+      <div className="mt-1 flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-400">
         {new Date(message.createdAt).toLocaleString()}
+        {message.isEdited && (
+          <span
+            aria-label="edited"
+            className="normal-case italic"
+            title={
+              message.editedAt
+                ? `Edited ${new Date(message.editedAt).toLocaleString()}`
+                : 'Edited'
+            }
+          >
+            (edited)
+          </span>
+        )}
       </div>
     </div>
   );

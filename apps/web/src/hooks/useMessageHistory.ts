@@ -20,6 +20,10 @@ export interface ChatMessage {
   ciphertext?: string | null;
   contentType?: string;
   sequenceNumber?: number | null;
+  /** True when this message has been edited at least once. */
+  isEdited?: boolean;
+  /** ISO timestamp of the last edit. */
+  editedAt?: string;
 }
 
 interface HistoryAck {
@@ -171,6 +175,48 @@ export function useMessageHistory({
     socket.on('new_message', onNewMessage);
     return () => {
       socket.off('new_message', onNewMessage);
+    };
+  }, [socket, conversationId, setMessages]);
+
+  // Listen for message_edited events and update the message in-place (#674).
+  //
+  // The event carries a new ciphertext that must go through the E2EE decrypt
+  // path.  `useInboundPipeline` owns the actual decryption; here we update
+  // the ChatMessage layer (content / ciphertext fields) and re-index the
+  // message so the local search index reflects the new plaintext.
+  useEffect(() => {
+    if (!socket) return;
+    function onMessageEdited(raw: {
+      messageId: string;
+      conversationId: string;
+      senderId: string;
+      ciphertext: string;
+      contentType?: string;
+      sequenceNumber?: number | null;
+      createdAt: string;
+      editedAt: string;
+    }) {
+      if (!raw || raw.conversationId !== conversationId) return;
+      setMessages((current) => {
+        const idx = current.findIndex((m) => m.id === raw.messageId);
+        if (idx === -1) return current;
+        const updated: ChatMessage = {
+          ...current[idx],
+          // Replace ciphertext so the display / search layer picks up the edit.
+          ciphertext: raw.ciphertext,
+          content: raw.ciphertext,
+          contentType: raw.contentType ?? current[idx].contentType,
+          isEdited: true,
+          editedAt: raw.editedAt,
+        };
+        const next = [...current];
+        next[idx] = updated;
+        return next;
+      });
+    }
+    socket.on('message_edited', onMessageEdited);
+    return () => {
+      socket.off('message_edited', onMessageEdited);
     };
   }, [socket, conversationId, setMessages]);
 

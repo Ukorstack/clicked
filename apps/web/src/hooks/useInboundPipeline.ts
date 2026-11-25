@@ -7,12 +7,14 @@ import { getE2EDeviceId } from '@/lib/jwt';
 import {
   mergeInboundMessage,
   processInboundEnvelope,
+  processMessageEdit,
   sortBySequenceNumber,
   type EnvelopeInput,
 } from '@/lib/crypto/processEnvelope';
 import type {
   DeviceEnvelopeEvent,
   InboundMessage,
+  MessageEditedEvent,
   MessageEnvelopeEvent,
   SyncEnvelope,
 } from '@/lib/crypto/types';
@@ -53,6 +55,9 @@ export function useInboundPipeline({
 }: UseInboundPipelineOptions): UseInboundPipelineReturn {
   const [messagesById, setMessagesById] = useState<Map<string, InboundMessage>>(new Map());
   const [syncing, setSyncing] = useState(false);
+  // Keep a ref in sync with messagesById so handleMessageEdit can read the
+  // current map without being listed as a useEffect dependency.
+  const messagesByIdRef = useRef<Map<string, InboundMessage>>(new Map());
 
   const pendingCiphertext = useRef(
     new Map<string, { ciphertext: string; sequenceNumber: number; conversationId: string }>(),
@@ -66,6 +71,7 @@ export function useInboundPipeline({
       const next = new Map(prev);
       const existing = next.get(incoming.messageId);
       next.set(incoming.messageId, mergeInboundMessage(existing, incoming));
+      messagesByIdRef.current = next;
       return next;
     });
   }, []);
@@ -81,6 +87,24 @@ export function useInboundPipeline({
         upsertMessage(result);
       } finally {
         processing.current.delete(input.messageId);
+      }
+    },
+    [token, conversationId, upsertMessage],
+  );
+
+  const handleMessageEdit = useCallback(
+    async (event: MessageEditedEvent) => {
+      if (!token || event.conversationId !== conversationId) return;
+      const editKey = `edit:${event.messageId}`;
+      if (processing.current.has(editKey)) return;
+      processing.current.add(editKey);
+
+      try {
+        const existing = messagesByIdRef.current.get(event.messageId);
+        const result = await processMessageEdit(event, existing, token);
+        upsertMessage(result);
+      } finally {
+        processing.current.delete(editKey);
       }
     },
     [token, conversationId, upsertMessage],
@@ -253,16 +277,22 @@ export function useInboundPipeline({
       ingestMeta(msg);
     }
 
+    function onMessageEdited(event: MessageEditedEvent) {
+      void handleMessageEdit(event);
+    }
+
     socket.on('message_envelope', onMessageEnvelope);
     socket.on('device_envelope', onDeviceEnvelope);
     socket.on('new_message', onNewMessage);
+    socket.on('message_edited', onMessageEdited);
 
     return () => {
       socket.off('message_envelope', onMessageEnvelope);
       socket.off('device_envelope', onDeviceEnvelope);
       socket.off('new_message', onNewMessage);
+      socket.off('message_edited', onMessageEdited);
     };
-  }, [socket, conversationId, handleEnvelope, ingestCiphertext, ingestMeta]);
+  }, [socket, conversationId, handleEnvelope, ingestCiphertext, ingestMeta, handleMessageEdit]);
 
   // Offline sync on connect (#137).
   useEffect(() => {

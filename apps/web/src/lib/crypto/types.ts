@@ -62,6 +62,30 @@ export interface InboundMessage {
   status: InboundMessageStatus;
   plaintext?: string;
   unavailableReason?: UnavailableReason;
+  /** Set to true when the message has been edited at least once. */
+  isEdited?: boolean;
+  /** ISO timestamp of the last edit, as supplied by the server. */
+  editedAt?: string;
+}
+
+/**
+ * Shape of the `message_edited` socket event emitted by the backend.
+ * The new ciphertext goes through the same decrypt/verify pipeline as a
+ * normal inbound envelope.
+ */
+export interface MessageEditedEvent {
+  messageId: string;
+  conversationId: string;
+  senderId: string;
+  senderDeviceId: string | null;
+  contentType: string;
+  sequenceNumber: number;
+  /** Original createdAt of the message (unchanged). */
+  createdAt: string;
+  /** ISO timestamp of this edit. */
+  editedAt: string;
+  /** New ciphertext to decrypt in place of the original. */
+  ciphertext: string;
 }
 
 export class PreLinkError extends Error {
