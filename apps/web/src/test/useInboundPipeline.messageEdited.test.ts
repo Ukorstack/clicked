@@ -12,12 +12,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MessageEditedEvent } from '@/lib/crypto/types';
 
 // ---------------------------------------------------------------------------
-// Mocks
+// Mocks — all vi.fn() references must be created with vi.hoisted() so they
+// are available when vi.mock() factory functions execute (vi.mock is hoisted
+// to the top of the file by Vitest's transform, before any const declarations).
 // ---------------------------------------------------------------------------
 
-const mockSetCachedPlaintext = vi.fn();
-const mockGetCachedPlaintext = vi.fn(() => undefined as string | undefined);
-const mockDeleteCachedPlaintext = vi.fn();
+const {
+  mockSetCachedPlaintext,
+  mockGetCachedPlaintext,
+  mockDeleteCachedPlaintext,
+  mockIndexMessages,
+  mockRemoveMessages,
+  mockProcessInboundEnvelope,
+} = vi.hoisted(() => ({
+  mockSetCachedPlaintext: vi.fn(),
+  mockGetCachedPlaintext: vi.fn(() => undefined as string | undefined),
+  mockDeleteCachedPlaintext: vi.fn(),
+  mockIndexMessages: vi.fn(async () => {}),
+  mockRemoveMessages: vi.fn(async () => {}),
+  mockProcessInboundEnvelope: vi.fn(),
+}));
 
 vi.mock('@/lib/crypto/plaintextCache', () => ({
   setCachedPlaintext: mockSetCachedPlaintext,
@@ -27,9 +41,6 @@ vi.mock('@/lib/crypto/plaintextCache', () => ({
   clearPlaintextCache: vi.fn(),
 }));
 
-const mockIndexMessages = vi.fn(async () => {});
-const mockRemoveMessages = vi.fn(async () => {});
-
 vi.mock('@/lib/search/searchClient', () => ({
   indexMessages: mockIndexMessages,
   removeMessages: mockRemoveMessages,
@@ -37,9 +48,6 @@ vi.mock('@/lib/search/searchClient', () => ({
   clearIndex: vi.fn(),
   waitReady: vi.fn(async () => {}),
 }));
-
-// processInboundEnvelope — controlled per test
-const mockProcessInboundEnvelope = vi.fn();
 
 vi.mock('@/lib/crypto/processEnvelope', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/crypto/processEnvelope')>();
@@ -55,23 +63,6 @@ vi.mock('@/lib/jwt', () => ({ getE2EDeviceId: vi.fn(() => 'device-1') }));
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-type SocketHandler = (...args: unknown[]) => void;
-
-function makeSocket() {
-  const handlers = new Map<string, SocketHandler[]>();
-  return {
-    on: vi.fn((event: string, handler: SocketHandler) => {
-      handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-    }),
-    off: vi.fn(),
-    emit: vi.fn(),
-    _emit(event: string, payload: unknown) {
-      for (const h of handlers.get(event) ?? []) h(payload);
-    },
-    handlers,
-  };
-}
 
 function makeEditedEvent(overrides: Partial<MessageEditedEvent> = {}): MessageEditedEvent {
   return {
@@ -96,11 +87,8 @@ import {
   processInboundEnvelope,
   mergeInboundMessage,
 } from '@/lib/crypto/processEnvelope';
-import {
-  setCachedPlaintext,
-  deleteCachedPlaintext,
-} from '@/lib/crypto/plaintextCache';
-import { indexMessages, removeMessages } from '@/lib/search/searchClient';
+import { setCachedPlaintext } from '@/lib/crypto/plaintextCache';
+import { indexMessages } from '@/lib/search/searchClient';
 import type { InboundMessage } from '@/lib/crypto/types';
 
 /**
